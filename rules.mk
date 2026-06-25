@@ -90,7 +90,7 @@ TGT_LDFLAGS += $(ARCH_FLAGS)
 TGT_LDFLAGS += -specs=nano.specs
 TGT_LDFLAGS += -Wl,--gc-sections
 # OPTIONAL
-#TGT_LDFLAGS += -Wl,-Map=$(PROJECT).map
+TGT_LDFLAGS += -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map
 ifeq ($(V),99)
 TGT_LDFLAGS += -Wl,--print-gc-sections
 endif

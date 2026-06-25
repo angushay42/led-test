@@ -6,7 +6,7 @@ INC_DIR 	= inc
 
 SHARED_DIR = ../shared
 CFILES = $(SRC_DIR)/firmware.c
-# CFILES += api.c
+CFILES += $(SHARED_DIR)/uart.c
 # AFILES += api-asm.S
 
 # TODO - you will need to edit these two lines!
