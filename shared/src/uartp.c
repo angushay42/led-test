@@ -23,22 +23,22 @@ static volatile uint64_t last_poll_packet = 0;
 /* static prototypes */
 static void uartp_enable(void);
 static void uartp_disable(void);
-static error_t uartp_send(struct packet *p);
-static error_t uartp_send_8(struct packet *p);
-static error_t uartp_send_16(struct packet *p);
-static error_t uartp_send_32(struct packet *p);
-static error_t uartp_send_64(struct packet *p);
-static error_t uartp_validate_packet(uint8_t buffer[], bool *found);
+static uart_error_t uartp_send(struct packet *p);
+static uart_error_t uartp_send_8(struct packet *p);
+static uart_error_t uartp_send_16(struct packet *p);
+static uart_error_t uartp_send_32(struct packet *p);
+static uart_error_t uartp_send_64(struct packet *p);
+static uart_error_t uartp_validate_packet(uint8_t buffer[], bool *found);
 static uint8_t get_size_from_flag(uint8_t flag);
-static error_t uartp_fill_packet(struct packet *p, uint8_t buffer[]);
-static error_t uartp_fill_8(struct packet *p, uint8_t buffer[], size_t len);
+static uart_error_t uartp_fill_packet(struct packet *p, uint8_t buffer[]);
+static uart_error_t uartp_fill_8(struct packet *p, uint8_t buffer[], size_t len);
 
 
 /** @TODO
  * it could be beneficial to "flatten" data I want to send and then just cycle it out.
  * i.e. each packet gets flattened to an identical format of bytes to be sent over uartp?
  */
-static error_t uartp_send_8(struct packet *p) {
+static uart_error_t uartp_send_8(struct packet *p) {
     uint8_t *ptr, temp;
     ptr = (*p).u;
     for (size_t i = 0; i < (*p).len; i++) {
@@ -48,7 +48,7 @@ static error_t uartp_send_8(struct packet *p) {
     return OK;
 }
 
-static error_t uartp_send_16(struct packet *p) {
+static uart_error_t uartp_send_16(struct packet *p) {
     uint16_t *ptr, temp;
     ptr = (*p).u;
     for (size_t i = 0; i < (*p).len; i++) {
@@ -61,7 +61,7 @@ static error_t uartp_send_16(struct packet *p) {
     return OK;
 }
 
-static error_t uartp_send_32(struct packet *p) {
+static uart_error_t uartp_send_32(struct packet *p) {
     uint32_t *ptr, temp;
     ptr = (*p).u;
     for (size_t i = 0; i < (*p).len; i++) {
@@ -74,7 +74,7 @@ static error_t uartp_send_32(struct packet *p) {
     return OK;
 }
 
-static error_t uartp_send_64(struct packet *p) {
+static uart_error_t uartp_send_64(struct packet *p) {
     uint64_t *ptr, temp;
     ptr = (*p).u;
     for (size_t i = 0; i < (*p).len; i++) {
@@ -87,12 +87,15 @@ static error_t uartp_send_64(struct packet *p) {
     return OK;
 }
 
-extern error_t uartp_send_packet(struct packet *p) {
-    error_t err;
+extern uart_error_t uartp_send_packet(struct packet *p) {
+    uart_error_t err;
     size_t n;
 
+    if (p == NULL)
+        return PACKET_NULL_POINTER;
+
     if ((*p).id == NULL)
-        return uartp_SEND_NULL;
+        return PACKET_NULL_ID;
     
     /** create packet for string identifier and send it */
     /* get length of id */
@@ -100,7 +103,7 @@ extern error_t uartp_send_packet(struct packet *p) {
         ;
     // todo
     if (n > (size_t) 255)
-        return uartp_INVALID_SIZE;
+        return PACKET_LENGTH_INVALID;
 
     
     struct packet ch = {
@@ -121,9 +124,9 @@ extern error_t uartp_send_packet(struct packet *p) {
 }
 
 // todo wish this was more general...
-static error_t uartp_send(struct packet *p) {
+static uart_error_t uartp_send(struct packet *p) {
     if (p == NULL)
-        return uartp_SEND_NULL;
+        return PACKET_NULL_POINTER;
 
     uint8_t flag;
 
@@ -154,7 +157,7 @@ static error_t uartp_send(struct packet *p) {
             uartp_send_64(p);
             break;
         default:
-            return uartp_INVALID_SIZE;
+            return PACKET_WORD_SIZE_INVALID;
     }
     
     // send stop char
@@ -164,12 +167,12 @@ static error_t uartp_send(struct packet *p) {
 }
 
 /* @ todo CHECK FOR NULL POINTERs */
-extern error_t uartp_poll_packet(struct packet *p, uint64_t poll_period, bool *found) {
+extern uart_error_t uartp_poll_packet(struct packet *p, uint64_t poll_period, bool *found) {
     if (p == NULL)
         return PACKET_NULL_POINTER;
     if ((*p).u == NULL)
-        return PACKET_NULL_MEMORY;
-    error_t err;
+        return PACKET_NULL_DATA_POINTER;
+    uart_error_t err;
     /* get current time */
     uint64_t now = get_time(true);
     uint8_t buffer[MAX_PACKET_SIZE]; 
@@ -197,12 +200,12 @@ extern error_t uartp_poll_packet(struct packet *p, uint64_t poll_period, bool *f
     return OK;
 }
 
-static error_t uartp_fill_packet(struct packet *p, uint8_t buffer[]) {
+static uart_error_t uartp_fill_packet(struct packet *p, uint8_t buffer[]) {
     if (p == NULL || buffer == NULL)
         return PACKET_NULL_POINTER;
     if ((*p).u == NULL)
-        return PACKET_NULL_MEMORY;
-    error_t err;
+        return PACKET_NULL_DATA_POINTER;
+    uart_error_t err;
     uint8_t flag, len, size;
     
     /* get info from packet */
@@ -223,17 +226,17 @@ static error_t uartp_fill_packet(struct packet *p, uint8_t buffer[]) {
             err = NOT_IMPLEMENTED;
             break; 
         default:
-            return PACKET_INVALID_SIZE;
+            return PACKET_WORD_SIZE_INVALID;
     }
     return (err) ? err: OK;
 }
 /* @TODO fill other word sizes, bearing in mind that byte order is little-endian. */
 
-static error_t uartp_fill_8(struct packet *p, uint8_t buffer[], size_t len) {
+static uart_error_t uartp_fill_8(struct packet *p, uint8_t buffer[], size_t len) {
     if (p == NULL || buffer == NULL)
         return PACKET_NULL_POINTER;
     if ((*p).u == NULL)
-        return PACKET_NULL_MEMORY;
+        return PACKET_NULL_DATA_POINTER;
     /* cast void to byte pointer */
     uint8_t *ptr = (*p).u;
     size_t i, offset;
@@ -260,10 +263,10 @@ static uint8_t get_size_from_flag(uint8_t flag) {
 }
 
 /* @TODO errors overwrite buffer errors */
-static error_t uartp_validate_packet(uint8_t buffer[], bool *found) {
+static uart_error_t uartp_validate_packet(uint8_t buffer[], bool *found) {
     if (buffer == NULL)
         return PACKET_NULL_POINTER;
-    error_t err;
+    uart_error_t err;
     uint8_t flag, len, size;
     size_t i, n;
     
@@ -271,19 +274,19 @@ static error_t uartp_validate_packet(uint8_t buffer[], bool *found) {
     *found = false;
     
     /* if buffer empty */
-    if (dring_buf_empty(&_rb))
-        return (err = PACKET_EMPTY_BUFFER);
+    if ((err = dring_buf_empty(&_rb)))
+        return err;
 
     /* read buffer into local buffer */
     while (!dring_buf_empty(&_rb))
         if ((err = dring_buf_read(&_rb, buffer + i++)))
-            return (err = PACKET_FAILED_READ);
+            return err;
     
     /* if len buffer invalid */
     /* i is incremented either way, so it will point to the next slot, i.e. one past the end */
     n = i;
     if (!(n >= MIN_PACKET_SIZE && n <= MAX_PACKET_SIZE))
-        return (err = PACKET_INVALID_SIZE);
+        return (err = PACKET_LENGTH_INVALID);
 
     /* if start and stop bytes aren't present */
     if (!(buffer[0] == PACKET_START && buffer[n-1] == PACKET_STOP))
@@ -305,7 +308,7 @@ static error_t uartp_validate_packet(uint8_t buffer[], bool *found) {
 
 /************************* interrupts *********************/
 void usart2_isr(void) {
-    error_t err;
+    uart_error_t err;
     if (usart_get_flag(USART2, USART_FLAG_RXNE) == 1) {
         /* read from buffer, clearing the flag also. */
         uint8_t data = (uint8_t) usart_recv(USART2);
@@ -340,7 +343,7 @@ static void uartp_disable(void) {
 
 /********************* init functions ********************/
 /* adapted from https://github.com/lowbyteproductions/bare-metal-series */
-error_t uartp_setup(void) {
+uart_error_t uartp_setup(void) {
     /* enable clock to the peripheral */
     rcc_periph_clock_enable(RCC_USART2);
     rcc_periph_clock_enable(RCC_GPIOA);
@@ -371,11 +374,11 @@ error_t uartp_setup(void) {
     usart_enable(UART);
 
     // set up buffer
-    error_t err = dring_buf_setup(&_rb, _buffer, MIN_PACKET_BUFFER_SIZE);
+    uart_error_t err = dring_buf_setup(&_rb, _buffer, MIN_PACKET_BUFFER_SIZE);
     return err;
 }
 
-extern error_t uartp_teardown(void) {
+extern uart_error_t uartp_teardown(void) {
     nvic_disable_irq(NVIC_USART1_IRQ);
     usart_disable_rx_interrupt(UART);
     rcc_periph_clock_disable(RCC_USART2);

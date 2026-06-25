@@ -6,7 +6,8 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/cm3/nvic.h>
 
-#include <sys/types.h>
+#include <stdint.h>
+#include <stddef.h>
 
 #include "common-defines.h"
 #include "ringbuffer.h"
@@ -35,8 +36,31 @@
 #define PACKET_START    ((uint8_t)'{')
 #define PACKET_STOP     ((uint8_t)'}')
 
+/* // TODO state machine instead? */
 /* flag for superloop to read the packet in the buffer */
 extern volatile bool packet_found;
+
+// TODO 
+enum d_flags {
+    fbyte,
+    fhalf,
+    fword,
+    fdouble = 4,
+    ffloating,
+    fsigned,
+};
+
+typedef enum uart_errors {
+    OK = 0U,
+    PACKET_NULL_ID,
+    PACKET_NULL_POINTER,
+    PACKET_NULL_DATA_POINTER,
+    PACKET_LENGTH_INVALID,
+    PACKET_WORD_SIZE_INVALID,
+    PACKET_MISSING_START_STOP,
+    PACKET_SIZE_MISMATCH,
+    NOT_IMPLEMENTED
+} uart_error_t;
 
 // adapted from https://stackoverflow.com/a/44611722
 struct packet {
@@ -53,11 +77,11 @@ struct packet {
 };
 
 
-extern error_t uartp_setup(void);
-extern error_t uartp_teardown(void);
+extern uart_error_t uartp_setup(void);
+extern uart_error_t uartp_teardown(void);
 
-extern error_t uartp_send_packet(struct packet *p);
-extern error_t uartp_poll_packet(struct packet *p, uint64_t poll_period, bool *found);
+extern uart_error_t uartp_send_packet(struct packet *p);
+extern uart_error_t uartp_poll_packet(struct packet *p, uint64_t poll_period, bool *found);
 
 
 
