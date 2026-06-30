@@ -2,7 +2,7 @@
 
 
 /* initialise ring buffer. returns 0 if successful */
-extern error_t ring_buf_setup(ring_buf_t* rb, uint8_t* buffer, uint32_t size) {
+extern error_t ring_buf_setup(ring_buf_t* rb, uint32_t* buffer, uint32_t size) {
     // check if size is a power of 2
     if (rb == NULL)
         return INVALID_RB_POINTER;
@@ -24,7 +24,7 @@ extern int ring_buf_empty(ring_buf_t* rb) {
 }
 
 /* write a byte into ring buffer. returns 0 if successful */
-extern error_t ring_buf_write(ring_buf_t* rb, uint8_t byte) {
+extern error_t ring_buf_write(ring_buf_t* rb, uint32_t byte) {
     if (((rb->head + 1) & rb->mask) == rb->tail)  // buffer full
         return RING_BUF_FULL;
     
@@ -34,7 +34,7 @@ extern error_t ring_buf_write(ring_buf_t* rb, uint8_t byte) {
 }
 
 /* read a byte from ring buffer. returns 0 if successful */
-extern error_t ring_buf_read(ring_buf_t* rb, uint8_t* byte) {
+extern error_t ring_buf_read(ring_buf_t* rb, uint32_t* byte) {
     if (rb->tail == rb->head)
         return RING_BUF_EMPTY;       // err code
     

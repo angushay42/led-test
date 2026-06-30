@@ -26,6 +26,7 @@ const uint16_t num_bits = DATA_SIZE * LEDS * 8;
 volatile uint16_t pwm_values[DATA_SIZE * LEDS * 8];
 
 enum LED_states {
+    initial,
     send_data,
     send_break
 };
@@ -38,23 +39,98 @@ enum LED_events {
 struct LED_fsm {
     enum LED_states curr_state;
     enum LED_states prev_state;
-} fsm;
+};
+
+typedef enum FSM_errors {
+    OK = 0U,
+    INVALID_EVENT,
+    NULL_FSM_POINTER,
+} FSM_error_t;
 
 
 #define EVENT_QUEUE_SIZE (256)
+
 volatile enum LED_events fsm_events[EVENT_QUEUE_SIZE];
 volatile ring_buf_t event_rb;
 
-error_t FSM_get_event() {
+/* create event queue and set initial state for a FSM struct */
+error_t FSM_init(struct LED_fsm *fsm) {
+    error_t err;
+    if (fsm == NULL)
+        return NULL_FSM_POINTER;
+
+    /* set up queue */
+    if ((err = ring_buf_setup(&event_rb, fsm_events, EVENT_QUEUE_SIZE)))
+        return err;
+    
+    /* set current and previous state to initial */
+    (*fsm).curr_state = initial;
+    (*fsm).prev_state = initial;
+    return OK;
+}
+
+// TODO this can return error if no event has happened (which will be very common)
+/* read from event queue and update state if event exists */
+error_t FSM_update_state(struct LED_fsm *fsm) {
     error_t err;
     enum LED_events event;
-    ring_buf_read(&event_rb, )
+    enum LED_states state;
+
+    if (fsm == NULL)
+        return NULL_FSM_POINTER;
+
+    /* consume event from queue */
+    if ((err = FSM_get_event(&event)))
+        return err;
+    
+    /* process event */
+    switch (event) {
+        case data_complete:
+            state = send_break;
+            break;
+
+        case break_complete:
+            state = send_data;
+            break; 
+
+        default:
+            return INVALID_EVENT;
+    }
+    /* save previous state and update current */
+    (*fsm).prev_state = (*fsm).curr_state;
+    (*fsm).curr_state = state;
 
     return OK;
 }
 
-error_t FSM_queue_event(struct LED_fsm *fsm) {
+error_t FSM_get_event(enum LED_events *event) {
+    error_t err;
+    
+    /* enter critical section */
+    cm_disable_interrupts();
+    
+    /* copy shared value into local variable */
+    err = ring_buf_read(&event_rb, event);
+    
+    /* exit critical section */
+    cm_enable_interrupts(); 
+    
+    return err;
+}
 
+/* add event to the FSM queue */
+error_t FSM_queue_event(enum LED_events event) {
+    error_t err;
+
+    /* enter critical section */
+    cm_disable_interrupts();
+
+    err = ring_buf_write(&event_rb, event);
+
+    /* exit critical section */
+    cm_enable_interrupts();
+
+    return err;
 }
 
 
@@ -63,23 +139,18 @@ error_t setup(void);
 
 int main(void) {
     error_t err;
+    struct LED_fsm fsm;
     
-    /* general setup from prototyping */
-    err = setup();
-    if (err) 
-        ; // todo handle errors
+    if ((err = setup()))
+        return err;
 
-    /* setup fsm */
-    err = ring_buf_setup(&event_rb, fsm_events, EVENT_QUEUE_SIZE);
-    if (err) 
-        ; // todo handle errors
+    if ((err = FSM_init(&fsm)))
+        return err;
     
-    // initial state 
-    fsm.curr_state = send_data;
-    err = FSM_get_event(&fsm);
-    if (err) 
-        ; // todo handle errors
     while (1) {
+        /* get current state */
+        if ((err = FSM_update_state(&fsm)))
+            return err; // todo
         switch (fsm.curr_state) {
             case send_data:
 
