@@ -3,9 +3,11 @@ BUILD_DIR 	= build
 BIN_DIR 	= bin
 SRC_DIR 	= src
 INC_DIR 	= inc
-
 SHARED_DIR = ../shared
+SHARED_INC_DIR = ${SHARED_DIR}/inc
+
 CFILES = $(SRC_DIR)/firmware.c
+CFILES += $(SHARED_DIR)/ringbuffer.c
 
 # AFILES += api-asm.S
 
@@ -17,6 +19,7 @@ OOCD_FILE = target/stm32f4x.cfg
 VPATH += $(SHARED_DIR)
 VPATH += $(INC_DIR)
 INCLUDES += $(patsubst %,-I%, . $(SHARED_DIR))
+INCLUDES += $(patsubst %,-I%, . $(SHARED_INC_DIR))
 INCLUDES += $(patsubst %,-I%, . $(INC_DIR))
 OPENCM3_DIR= lib/libopencm3
 

@@ -6,10 +6,12 @@
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/app/lib/libopencm3/**",
                 "${workspaceFolder}/app/inc/**",
-                "${workspaceFolder}/shared/inc/**"
-
+                "${workspaceFolder}/shared/inc/**",
+                "${workspaceFolder}/shared/inc"
             ],
-            "defines": ["STM32F4"],
+            "defines": [
+                "STM32F4"
+            ],
             "compilerPath": "/usr/bin/clang",
             "cStandard": "c99",
             "cppStandard": "c++14",
