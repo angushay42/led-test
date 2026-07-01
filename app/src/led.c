@@ -1,17 +1,4 @@
-#include "common-defines.h"
-#include "ringbuffer.h"
-
-#include "libopencm3/stm32/rcc.h"
-#include "libopencm3/stm32/gpio.h"
-#include "libopencm3/stm32/timer.h"
-#include "libopencm3/stm32/dma.h"
-#include "libopencm3/stm32/flash.h"
-
-#include "libopencm3/cm3/systick.h"
-#include "libopencm3/cm3/nvic.h"
-#include "libopencm3/cm3/cortex.h"
-
-#include <sys/types.h>
+#include "led.h"
 
 volatile uint32_t led_arr, high_duty, low_duty;
 volatile uint32_t *encoder[2] = {&low_duty, &high_duty};
@@ -24,43 +11,6 @@ volatile uint32_t *encoder[2] = {&low_duty, &high_duty};
 
 const uint16_t num_bits = DATA_SIZE * LEDS * 8;
 volatile uint16_t pwm_values[DATA_SIZE * LEDS * 8];
-
-int main(void) {
-    error_t err;
-    struct LED_fsm fsm;
-
-    /* initialise clock for whole system */
-    rcc_clock_setup_pll(&rcc_hsi_configs[RCC_CLOCK_3V3_84MHZ]);
-
-    if ((err = FSM_init(&fsm)))
-        return err;
-    
-    while (1) {
-        /* get current state */
-        if ((err = FSM_update_state(&fsm)))
-            return err; // todo
-        
-        if (fsm.curr_state == fsm.prev_state)
-            continue;
-        
-        switch (fsm.curr_state) {
-            case state_send_data:
-                err = FSM_handle_send_data(&fsm);
-                break;
-            case state_send_break:
-                err = FSM_handle_send_break(&fsm);
-                break;
-            default:
-                err = INVALID_STATE;
-                break;
-        }
-        if (err) 
-            return err; // todo
-        
-    }
-    return 0;
-}
-
 
 
 /******************* LED Driver *******************/
@@ -92,17 +42,19 @@ void dma1_stream0_isr(void) {
 
 /* ------------------ LED API Functions ------------------ */
 
-error_t LED_start(void) {
+led_error_t LED_start(void) {
     dma_enable_stream(DMA1, DMA_STREAM0);
     timer_set_counter(TIM4, 0U);
     timer_enable_counter(TIM4);
+    return OK;
 }
-error_t LED_stop(void) {
+
+led_error_t LED_stop(void) {
     timer_disable_counter(TIM4);
     dma_disable_stream(DMA1, DMA_STREAM0);
 }
 
-error_t LED_init(void) {
+led_error_t LED_init(void) {
     /* init variables */
     // 84MHz / 800KHz = 105
     led_arr = 105;
@@ -182,7 +134,8 @@ error_t LED_init(void) {
     return OK;
 }
 
-error_t LED_teardown(void) {
+led_error_t LED_teardown(void) {
+
     dma_stream_reset(DMA1, DMA_STREAM0);
 
     rcc_periph_clock_disable(RCC_GPIOB);
