@@ -8,6 +8,8 @@ SHARED_INC_DIR = ${SHARED_DIR}/inc
 
 CFILES = $(SRC_DIR)/firmware.c
 CFILES += $(SHARED_DIR)/ringbuffer.c
+CFILES += $(SHARED_DIR)/fsm.c
+CFILES += $(SHARED_DIR)/led.c
 
 # AFILES += api-asm.S
 
