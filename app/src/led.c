@@ -1,6 +1,7 @@
 #include "led.h"
+#include "fsm.h"
 
-volatile uint32_t led_arr, high_duty, low_duty;
+volatile uint32_t led_data_arr, led_break_arr, high_duty, low_duty;
 volatile uint32_t *encoder[2] = {&low_duty, &high_duty};
 
 #define DATA_SIZE   (3) // bytes
@@ -13,60 +14,76 @@ const uint16_t num_bits = DATA_SIZE * LEDS * 8;
 volatile uint16_t pwm_values[DATA_SIZE * LEDS * 8];
 
 
+
 /******************* LED Driver *******************/
 /* ------------------ ISRs ------------------ */
 void tim4_isr(void) {
-    // timer_clear_flag(TIM4, TIM_SR_CC1IF); // todo remove for production
-    timer_clear_flag(TIM4, TIM_SR_UIF);     // todo remove for production
-
-    if (timer_get_flag(TIM4, TIM_SR_CC1IF)) {
-        timer_clear_flag(TIM4, TIM_SR_CC1IF);
-        gpio_set(GPIOB, GPIO10);
-        gpio_clear(GPIOB, GPIO10);
-    }
-    // if(timer_get_flag(TIM4, TIM_SR_UIF)){
-    //     timer_clear_flag(TIM4, TIM_SR_UIF);
-    //     gpio_toggle(GPIOB, GPIO10);
-    // }
+    
 }
+
+void tim3_isr(void) {
+    if (timer_get_flag(TIM3, TIM_SR_UIF)) {
+        timer_clear_flag(TIM3, TIM_SR_UIF);
+        
+        // turn TIM3 off
+        timer_disable_counter(TIM3);
+
+        // tell other components that break is complete
+        FSM_queue_event(event_break_complete);
+    }
+}
+
 /* current data being transmitted */
 volatile data_index = 0;
 void dma1_stream0_isr(void) {
     if (dma_get_interrupt_flag(DMA1, DMA_STREAM0, DMA_TCIF)) {
-        if (data_index == num_bits - 1) {
-
+        dma_clear_interrupt_flags(DMA1, DMA_STREAM0, DMA_TCIF);
+        // wait until all data is sent
+        if (data_index >= num_bits) {
+            data_index++;
+            return;
         }
-        data_index++;
+        data_index = 0;
+        // stop sending led data
+        LED_stop(); 
+        // signal to other components 
+        FSM_queue_event(event_data_complete);
     }
 }
 
 /* ------------------ LED API Functions ------------------ */
 
-led_error_t LED_start(void) {
+
+// TODO make data and break apis
+error_t LED_start(void) {
     dma_enable_stream(DMA1, DMA_STREAM0);
     timer_set_counter(TIM4, 0U);
     timer_enable_counter(TIM4);
     return OK;
 }
 
-led_error_t LED_stop(void) {
+error_t LED_stop(void) {
     timer_disable_counter(TIM4);
     dma_disable_stream(DMA1, DMA_STREAM0);
+    return OK;
 }
 
-led_error_t LED_init(void) {
+/**
+ * Configure TIM4 as PWM out
+ */
+error_t LED_init(void) {
     /* init variables */
     // 84MHz / 800KHz = 105
-    led_arr = 105;
+    led_data_arr = 105;
+    // 84MHz / (1 / (50us))
     // WS2812B protocol has specific timings for encoding 0s and 1s
     // the line is held high for 0.4us for a bit value of 0 (low)
     // the line is held high for 0.8us for a bit value of 1 (high)
     // the total period of a bit value is 1.25us, so 0.4/1.25 = 32%; 0.8 / 1.25 = 64%
     
-    low_duty = (uint32_t) ((float) led_arr * 0.32);
-    high_duty = (uint32_t) ((float) led_arr * 0.64);
+    low_duty = (uint32_t) ((float) led_data_arr * 0.32);
+    high_duty = (uint32_t) ((float) led_data_arr * 0.64);
 
-    rcc_periph_clock_enable(RCC_GPIOB);
     rcc_periph_clock_enable(RCC_TIM4);
     rcc_periph_clock_enable(RCC_DMA1);
 
@@ -109,7 +126,7 @@ led_error_t LED_init(void) {
     // keep frequency at 84MHz
     timer_set_prescaler(TIM4, 0);   
     // PWM frequency is determined by the ARR register, which set_period writes to
-    timer_set_period(TIM4, led_arr);
+    timer_set_period(TIM4, led_data_arr);
     // with preload enabled, generating an update will force ARR to take the value immediately
     timer_generate_event(TIM4, TIM_EGR_UG);
 
@@ -131,11 +148,24 @@ led_error_t LED_init(void) {
 
     timer_set_dma_on_update_event(TIM4);    // todo check this works
 
+    /* set up break timer */
+    led_break_arr = 4200;
+
+    // rcc_periph_clock_enable(RCC_GPIOB);
+    rcc_periph_clock_enable(RCC_TIM3);
+
+    timer_disable_counter(TIM3);
+    timer_set_mode(TIM3, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
+    timer_set_prescaler(TIM3, 0U);
+    timer_set_period(TIM3, led_break_arr);
+
+    timer_enable_irq(TIM3, TIM_DIER_UIE);
+    nvic_enable_irq(NVIC_TIM3_IRQ);
+
     return OK;
 }
 
-led_error_t LED_teardown(void) {
-
+error_t LED_teardown(void) {
     dma_stream_reset(DMA1, DMA_STREAM0);
 
     rcc_periph_clock_disable(RCC_GPIOB);

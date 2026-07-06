@@ -1,36 +1,20 @@
 #ifndef FSM_H
 #define FSM_H
 
+#include "libopencm3/cm3/cortex.h"
+
 #include "common-defines.h"
 #include "ringbuffer.h"
+#include "error.h"
 
-enum LED_states {
-    state_none,
-    state_send_data,
-    state_send_break
+struct FSM_struct {
+    unsigned int curr_state;
+    unsigned int prev_state;
 };
 
-enum LED_events {
-    event_none,
-    event_data_complete,
-    event_break_complete
-};
-
-struct LED_fsm {
-    enum LED_states curr_state;
-    enum LED_states prev_state;
-};
-
-typedef enum FSM_errors {
-    OK = 0U,
-    INVALID_EVENT,
-    INVALID_STATE,
-    NULL_FSM_POINTER,
-} FSM_error_t;
-
-#define EVENT_QUEUE_SIZE (256)
-
-volatile enum LED_events fsm_events[EVENT_QUEUE_SIZE];
-volatile ring_buf_t event_rb;
+error_t FSM_init(struct FSM_struct *fsm);
+error_t FSM_update_state(struct FSM_struct *fsm);
+error_t FSM_get_event(unsigned int *event);
+error_t FSM_queue_event(unsigned int event);
 
 #endif // FSM_H

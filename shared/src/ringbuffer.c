@@ -1,15 +1,12 @@
 #include "ringbuffer.h"
-
+#include "assert.h"
 
 /* initialise ring buffer. returns 0 if successful */
-extern error_t ring_buf_setup(ring_buf_t* rb, uint32_t* buffer, uint32_t size) {
+extern error_t ring_buf_setup(ring_buf_t* rb, volatile uint32_t* buffer, uint32_t size) {
+    assert(rb != NULL);
+    assert(buffer != NULL);
     // check if size is a power of 2
-    if (rb == NULL)
-        return INVALID_RB_POINTER;
-    else if (buffer == NULL) 
-        return INVALID_BUFFER_POINTER;
-    else if ((size & (size-1)) != 0)
-        return INVALID_SIZE;
+    assert((size & (size-1)) == 0);
     
     rb->buffer = buffer;
     rb->mask = size - 1;
@@ -25,18 +22,20 @@ extern int ring_buf_empty(ring_buf_t* rb) {
 
 /* write a byte into ring buffer. returns 0 if successful */
 extern error_t ring_buf_write(ring_buf_t* rb, uint32_t byte) {
-    if (((rb->head + 1) & rb->mask) == rb->tail)  // buffer full
-        return RING_BUF_FULL;
+    /* if writing would cause pointers to be equal, then the buffer is full */
+    if (((rb->head + 1) & rb->mask) == rb->tail)
+        return RINGBUF_BUFFER_FULL;
     
     rb->buffer[rb->head] = byte;
     rb->head = (rb->head + 1) & rb->mask;
-    return OK;   // success
+    return OK;
 }
 
 /* read a byte from ring buffer. returns 0 if successful */
-extern error_t ring_buf_read(ring_buf_t* rb, uint32_t* byte) {
+extern error_t ring_buf_read(ring_buf_t* rb, volatile uint32_t* byte) {
+    /* buffer empty if pointers are at same location */
     if (rb->tail == rb->head)
-        return RING_BUF_EMPTY;       // err code
+        return RINGBUF_BUFFER_EMPTY;
     
     // deref and copy byte
     *byte = rb->buffer[rb->tail];

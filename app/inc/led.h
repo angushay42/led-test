@@ -9,14 +9,32 @@
 #include "libopencm3/stm32/rcc.h"
 
 #include "common-defines.h"
+#include "error.h"
 
-typedef enum led_errors {
-    OK  = 0U,
-} led_error_t;
 
-led_error_t LED_start(void);
-led_error_t LED_stop(void);
-led_error_t LED_init(void);
-led_error_t LED_teardown(void);
+error_t LED_init(void);
+error_t LED_teardown(void);
+
+bool LED_data_status(void);
+bool LED_break_status(void);
+error_t LED_start(void);
+error_t LED_stop(void);
+
+enum LED_states {
+    state_init_led,
+    state_data_start,
+    state_data_during,
+    state_data_stop,
+    state_break_start,
+    state_break_during,
+    state_break_stop
+};
+
+enum LED_events {
+    event_none,
+    event_init_complete,
+    event_data_complete,
+    event_break_complete
+};
 
 #endif // LED_H

@@ -10,6 +10,9 @@
 
 #include "common-defines.h"
 #include "fsm.h"
+#include "led.h"
+#include "error.h"
+
 
 
 int main(void) {
@@ -21,14 +24,14 @@ int main(void) {
 
     if ((err = FSM_init(&fsm)))
         return err;
+
+    if ((err = LED_init()))
+        return err;
     
     while (1) {
         /* get current state */
         if ((err = FSM_update_state(&fsm)))
             return err; // todo
-        
-        if (fsm.curr_state == fsm.prev_state)
-            continue;
         
         switch (fsm.curr_state) {
             case state_send_data:
@@ -38,7 +41,8 @@ int main(void) {
                 err = FSM_handle_send_break(&fsm);
                 break;
             default:
-                err = INVALID_STATE;
+                // todo should there be an idle state?
+                err = FSM_INVALID_STATE;
                 break;
         }
         if (err) 
