@@ -5,7 +5,8 @@ typedef unsigned int error_t;
 
 enum errors {
     OK = 0U,
-    FSM_INVALID_STATE,
+    LED_INVALID_EVENT,
+    LED_INVALID_STATE,
     RINGBUF_BUFFER_FULL,
     RINGBUF_BUFFER_EMPTY
 };

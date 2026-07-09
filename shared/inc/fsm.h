@@ -12,8 +12,8 @@ struct FSM_struct {
     unsigned int prev_state;
 };
 
-error_t FSM_init(struct FSM_struct *fsm);
-error_t FSM_update_state(struct FSM_struct *fsm);
+error_t FSM_init(struct FSM_struct *fsm, unsigned int initial_state);
+error_t FSM_update_state(struct FSM_struct *fsm, unsigned int new_state);
 error_t FSM_get_event(unsigned int *event);
 error_t FSM_queue_event(unsigned int event);
 

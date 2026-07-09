@@ -27,43 +27,55 @@ error_t FSM_init(
     return OK;
 }
 
-/* read from event queue and update state if event exists */
-error_t FSM_update_state(struct FSM_struct *fsm) {
-    error_t err;
-    enum LED_events event;
-    enum LED_states state;
+error_t FSM_update_state(struct FSM_struct *fsm, unsigned int new_state) {
+    assert(fsm != NULL);
 
-    assert (fsm != NULL);
-
-    /* consume event from queue */
-    if ((err = FSM_get_event(&event)))
-        return err;
+    // todo some checks on if state is valid..? don't know how that could be done.
     
-    /* process event */
-    switch (event) {
-        /* if no event, do nothing */
-        case event_none:
-            return OK;
-        
-        /* data complete moves fsm to send break state */
-        case event_data_complete:
-            state = state_send_break;
-            break;
-
-        /* break complete moves fsm to send data */
-        case event_break_complete:
-            state = state_send_data;
-            break; 
-
-        default:
-            return FSM_INVALID_STATE;
-    }
-    /* save previous state and update current */
+    /* swap states and udpate */
     (*fsm).prev_state = (*fsm).curr_state;
-    (*fsm).curr_state = state;
-
-    return OK;
+    (*fsm).curr_state = new_state;
+    
+    return OK;    
 }
+
+// /* read from event queue and update state if event exists */
+// error_t FSM_update_state(struct FSM_struct *fsm) {
+//     error_t err;
+//     enum LED_events event;
+//     enum LED_states state;
+
+//     assert (fsm != NULL);
+
+//     /* consume event from queue */
+//     if ((err = FSM_get_event(&event)))
+//         return err;
+    
+//     /* process event */
+//     switch (event) {
+//         /* if no event, do nothing */
+//         case event_none:
+//             return OK;
+        
+//         /* data complete moves fsm to send break state */
+//         case event_data_complete:
+//             state = state_send_break;
+//             break;
+
+//         /* break complete moves fsm to send data */
+//         case event_break_complete:
+//             state = state_send_data;
+//             break; 
+
+//         default:
+//             return FSM_INVALID_STATE;
+//     }
+//     /* save previous state and update current */
+//     (*fsm).prev_state = (*fsm).curr_state;
+//     (*fsm).curr_state = state;
+
+//     return OK;
+// }
 
 /* get next event from queue, thread-safe */
 error_t FSM_get_event(unsigned int *event) {

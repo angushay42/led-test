@@ -15,8 +15,6 @@
 error_t LED_init(void);
 error_t LED_teardown(void);
 
-bool LED_data_status(void);
-bool LED_break_status(void);
 error_t LED_start(void);
 error_t LED_stop(void);
 
