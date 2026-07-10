@@ -21,20 +21,22 @@ void tim4_isr(void) {
     
 }
 
-void tim3_isr(void) {
-    if (timer_get_flag(TIM3, TIM_SR_UIF)) {
-        timer_clear_flag(TIM3, TIM_SR_UIF);
+// void tim3_isr(void) {
+//     if (timer_get_flag(TIM3, TIM_SR_UIF)) {
+//         timer_clear_flag(TIM3, TIM_SR_UIF);
         
-        // turn TIM3 off
-        timer_disable_counter(TIM3);
+//         // // turn TIM3 off
+//         // timer_disable_counter(TIM3);
 
-        // tell other components that break is complete
-        FSM_queue_event(event_break_complete);
-    }
-}
+//         // todo, disable interrupts or stop counter? 
+//         timer_disable_irq(TIM3, TIM_DIER_UIE);
+//         // tell other components that break is complete
+//         FSM_queue_event(event_break_complete);
+//     }
+// }
 
 /* current data being transmitted */
-volatile data_index = 0;
+volatile int data_index = 0;
 void dma1_stream0_isr(void) {
     if (dma_get_interrupt_flag(DMA1, DMA_STREAM0, DMA_TCIF)) {
         dma_clear_interrupt_flags(DMA1, DMA_STREAM0, DMA_TCIF);
@@ -54,7 +56,6 @@ void dma1_stream0_isr(void) {
 /* ------------------ LED API Functions ------------------ */
 
 
-// TODO make data and break apis
 error_t LED_start(void) {
     dma_enable_stream(DMA1, DMA_STREAM0);
     timer_set_counter(TIM4, 0U);
@@ -70,16 +71,24 @@ error_t LED_stop(void) {
 
 /**
  * Configure TIM4 as PWM out
+ * 
  */
 error_t LED_init(void) {
-    /* init variables */
-    // 84MHz / 800KHz = 105
-    led_data_arr = 105;
-    // 84MHz / (1 / (50us))
     // WS2812B protocol has specific timings for encoding 0s and 1s
     // the line is held high for 0.4us for a bit value of 0 (low)
     // the line is held high for 0.8us for a bit value of 1 (high)
     // the total period of a bit value is 1.25us, so 0.4/1.25 = 32%; 0.8 / 1.25 = 64%
+
+    /* init variables */
+    // clock frequency is divided by a prescaler and the ARR, Clk / psc = output
+    // rearranging to get the desired prescaler: Clk / output = psc
+    // therefore: 84MHz / 800KHz = 105
+    // this is the frequency of sending data packets
+    led_data_arr = 105;
+
+    // 84MHz / (1 / (50us))
+    // rearranging the same equation as above, using the break duration, converted to frequency
+    led_break_arr = 4200;
     
     low_duty = (uint32_t) ((float) led_data_arr * 0.32);
     high_duty = (uint32_t) ((float) led_data_arr * 0.64);
@@ -91,7 +100,7 @@ error_t LED_init(void) {
     dma_disable_stream(DMA1, DMA_STREAM0);
     dma_set_transfer_mode(DMA1, DMA_STREAM0, DMA_SxCR_DIR_MEM_TO_PERIPHERAL);
     /* send RGB values from memory to the CCR1 register as a PWM value */
-    dma_set_memory_address(DMA1, DMA_STREAM0, &pwm_values);
+    dma_set_memory_address(DMA1, DMA_STREAM0, (uint32_t) &pwm_values);
     dma_set_peripheral_address(DMA1, DMA_STREAM0, TIM4_CCR1);
     /* we are only sending one CCR value at a time */
     dma_set_number_of_data(DMA1, DMA_STREAM0, 1U);
@@ -148,9 +157,7 @@ error_t LED_init(void) {
 
     timer_set_dma_on_update_event(TIM4);    // todo check this works
 
-    /* set up break timer */
-    led_break_arr = 4200;
-
+    /* break timer set up */
     // rcc_periph_clock_enable(RCC_GPIOB);
     rcc_periph_clock_enable(RCC_TIM3);
 
@@ -158,6 +165,7 @@ error_t LED_init(void) {
     timer_set_mode(TIM3, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
     timer_set_prescaler(TIM3, 0U);
     timer_set_period(TIM3, led_break_arr);
+    timer_one_shot_mode(TIM3);
 
     timer_enable_irq(TIM3, TIM_DIER_UIE);
     nvic_enable_irq(NVIC_TIM3_IRQ);
