@@ -1,39 +1,36 @@
 #include "led.h"
 #include "fsm.h"
+#include "assert.h"
 
 volatile uint32_t led_data_arr, led_break_arr, high_duty, low_duty;
 volatile uint32_t *encoder[2] = {&low_duty, &high_duty};
 
-#define DATA_SIZE   (3) // bytes
+#define NUM_COLOURS   (3) // bytes
 #define LEDS        (12)
+#define NUM_BITS    (NUM_COLOURS * LEDS * 8)
 
 // each data packet is 24 bits wide
 // 12 leds means we need to store SIZE * LEDS * 8
 
-const uint16_t num_bits = DATA_SIZE * LEDS * 8;
-volatile uint16_t pwm_values[DATA_SIZE * LEDS * 8];
-
+volatile uint16_t pwm_values[NUM_BITS];
 
 
 /******************* LED Driver *******************/
 /* ------------------ ISRs ------------------ */
 void tim4_isr(void) {
-    
+    timer_clear_flag(TIM4, TIM_SR_UIF);
+    timer_clear_flag(TIM4, TIM_SR_CC1IF);
+
 }
 
-// void tim3_isr(void) {
-//     if (timer_get_flag(TIM3, TIM_SR_UIF)) {
-//         timer_clear_flag(TIM3, TIM_SR_UIF);
+void tim3_isr(void) {
+    if (timer_get_flag(TIM3, TIM_SR_UIF)) {
+        timer_clear_flag(TIM3, TIM_SR_UIF);
         
-//         // // turn TIM3 off
-//         // timer_disable_counter(TIM3);
-
-//         // todo, disable interrupts or stop counter? 
-//         timer_disable_irq(TIM3, TIM_DIER_UIE);
-//         // tell other components that break is complete
-//         FSM_queue_event(event_break_complete);
-//     }
-// }
+        // tell other components that break is complete
+        FSM_queue_event(event_break_complete);
+    }
+}
 
 /* current data being transmitted */
 volatile int data_index = 0;
@@ -41,20 +38,38 @@ void dma1_stream0_isr(void) {
     if (dma_get_interrupt_flag(DMA1, DMA_STREAM0, DMA_TCIF)) {
         dma_clear_interrupt_flags(DMA1, DMA_STREAM0, DMA_TCIF);
         // wait until all data is sent
-        if (data_index >= num_bits) {
+        if (data_index >= NUM_BITS) {
             data_index++;
             return;
         }
         data_index = 0;
         // stop sending led data
         LED_stop(); 
+        // reset memory address
+        dma_set_memory_address(DMA1, DMA_STREAM0, (uint32_t) pwm_values);
+
         // signal to other components 
         FSM_queue_event(event_data_complete);
     }
 }
 
-/* ------------------ LED API Functions ------------------ */
+static error_t LED_extract_bits(uint8_t colour, uint16_t *dest) {
+    assert(dest != NULL);
+    /* copy pointer */
+    uint16_t *ptr = dest;
+    /* iterate over byte and assign values */
+    for (size_t i = 0; i < 8; i++) {
+        *ptr++ = *(encoder[(colour & 1)]);
+        colour >> 1;
+    }
+    return OK;
+}
 
+/* ------------------ LED API Functions ------------------ */
+error_t LED_set_colour(uint8_t r, uint8_t g, uint8_t b) {
+    
+        
+}
 
 error_t LED_start(void) {
     dma_enable_stream(DMA1, DMA_STREAM0);
@@ -93,7 +108,12 @@ error_t LED_init(void) {
     low_duty = (uint32_t) ((float) led_data_arr * 0.32);
     high_duty = (uint32_t) ((float) led_data_arr * 0.64);
 
+    for (size_t i = 0; i < NUM_BITS; i++) {
+        pwm_values[i] = *(encoder[i & 1]);
+    }
+
     rcc_periph_clock_enable(RCC_TIM4);
+    rcc_periph_clock_enable(RCC_GPIOB);
     rcc_periph_clock_enable(RCC_DMA1);
 
     /* DMA setup */
@@ -118,6 +138,11 @@ error_t LED_init(void) {
     /* enable incrementation of the storage values */
     dma_enable_memory_increment_mode(DMA1, DMA_STREAM0);
     
+    /* enable interrupt */
+    dma_enable_transfer_complete_interrupt(DMA1, DMA_STREAM0);
+    nvic_enable_irq(NVIC_DMA1_STREAM0_IRQ);
+
+
     /* gpio setup */
     // PB6 is TIM4_CH1
     gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO6);
@@ -142,23 +167,22 @@ error_t LED_init(void) {
     timer_set_oc1_mode(TIM4, TIM_CCMR1_OC1M_PWM1);
     // PWM duty cycle is determined by the CCR1 register
     // in LOCM3, set_oc_value writes to this register.
-    timer_set_oc_value(TIM4, TIM_OC1, high_duty); 
+    timer_set_oc_value(TIM4, TIM_OC1, low_duty); 
 
-    // enable interrupt from capture/compare for monitoring
+    /* interrupt config */
     timer_enable_irq(TIM4, TIM_DIER_CC1IE);
-    // disable overflow interrupt
-    // the MCU will still set the update flag, but it won't trigger an interrupt.
+    // timer_disable_irq(TIM4, TIM_DIER_CC1IE);
     timer_disable_irq(TIM4, TIM_DIER_UIE);
     nvic_enable_irq(NVIC_TIM4_IRQ);
     
     timer_enable_oc_output(TIM4, TIM_OC1);
     timer_enable_oc_preload(TIM4, TIM_OC1);
+    /* manually set it, as it doesn't work */
     TIM4_CCMR1 = 0x68;
 
     timer_set_dma_on_update_event(TIM4);    // todo check this works
 
     /* break timer set up */
-    // rcc_periph_clock_enable(RCC_GPIOB);
     rcc_periph_clock_enable(RCC_TIM3);
 
     timer_disable_counter(TIM3);

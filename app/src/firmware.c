@@ -26,6 +26,15 @@ int main(void) {
     if ((err = FSM_init(&fsm, state_init_led)))
         return err;
     
+    LED_init();
+    // LED_start();
+    timer_enable_counter(TIM4);
+    dma_enable_stream(DMA1, DMA_STREAM0);
+    /* temp do nothing */
+    while (1) {
+        ;
+    }
+
     while (1) {
         /* get next event */
         if ((err = FSM_get_event(&event)))
@@ -83,8 +92,7 @@ int main(void) {
                 /* do nothing */
                 break;
             case state_break_stop:
-                timer_disable_counter(TIM4);
-                timer_set_counter(TIM4, 0);
+                /* do nothing, one-pulse mode will automate this*/
                 break;
             default:
                 err = LED_INVALID_STATE; 

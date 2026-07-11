@@ -11,6 +11,7 @@
 #include "common-defines.h"
 #include "error.h"
 
+error_t LED_set_colour(uint8_t r, uint8_t g, uint8_t b);
 
 error_t LED_init(void);
 error_t LED_teardown(void);
