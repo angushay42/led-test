@@ -14,6 +14,11 @@ volatile uint32_t *encoder[2] = {&low_duty, &high_duty};
 
 volatile uint16_t pwm_values[NUM_BITS];
 
+/* static prototypes */
+static void dma_setup(void);
+static void data_timer_setup(void);
+static void break_timer_setup(void);
+
 
 /******************* LED Driver *******************/
 /* ------------------ ISRs ------------------ */
@@ -84,44 +89,19 @@ error_t LED_stop(void) {
     return OK;
 }
 
-/**
- * Configure TIM4 as PWM out
- * 
- */
-error_t LED_init(void) {
-    // WS2812B protocol has specific timings for encoding 0s and 1s
-    // the line is held high for 0.4us for a bit value of 0 (low)
-    // the line is held high for 0.8us for a bit value of 1 (high)
-    // the total period of a bit value is 1.25us, so 0.4/1.25 = 32%; 0.8 / 1.25 = 64%
 
-    /* init variables */
-    // clock frequency is divided by a prescaler and the ARR, Clk / psc = output
-    // rearranging to get the desired prescaler: Clk / output = psc
-    // therefore: 84MHz / 800KHz = 105
-    // this is the frequency of sending data packets
-    led_data_arr = 105;
-
-    // 84MHz / (1 / (50us))
-    // rearranging the same equation as above, using the break duration, converted to frequency
-    led_break_arr = 4200;
-    
-    low_duty = (uint32_t) ((float) led_data_arr * 0.32);
-    high_duty = (uint32_t) ((float) led_data_arr * 0.64);
-
-    for (size_t i = 0; i < NUM_BITS; i++) {
-        pwm_values[i] = *(encoder[i & 1]);
-    }
-
-    rcc_periph_clock_enable(RCC_TIM4);
-    rcc_periph_clock_enable(RCC_GPIOB);
+static void dma_setup(void) {
+    /* clock the peripheral */
     rcc_periph_clock_enable(RCC_DMA1);
 
-    /* DMA setup */
+    /* disable before configuration */
     dma_disable_stream(DMA1, DMA_STREAM0);
-    dma_set_transfer_mode(DMA1, DMA_STREAM0, DMA_SxCR_DIR_MEM_TO_PERIPHERAL);
+
     /* send RGB values from memory to the CCR1 register as a PWM value */
+    dma_set_transfer_mode(DMA1, DMA_STREAM0, DMA_SxCR_DIR_MEM_TO_PERIPHERAL);
     dma_set_memory_address(DMA1, DMA_STREAM0, (uint32_t) &pwm_values);
     dma_set_peripheral_address(DMA1, DMA_STREAM0, TIM4_CCR1);
+
     /* we are only sending one CCR value at a time */
     dma_set_number_of_data(DMA1, DMA_STREAM0, 1U);
     /* on STM32F4 the channel is 2 for TIM4_CH1 */
@@ -129,8 +109,8 @@ error_t LED_init(void) {
     dma_set_priority(DMA1, DMA_STREAM0, DMA_SxCR_PL_VERY_HIGH);
     /* Direct mode does not use the FIFO level, it uses an internal FIFO */
     dma_enable_direct_mode(DMA1, DMA_STREAM0);
-    //todo could this be changed to a byte?
-    dma_set_memory_size(DMA1, DMA_STREAM0, 16U);
+
+    dma_set_memory_size(DMA1, DMA_STREAM0, 16U); // todo could be reduced to a byte ?
     /* CCR is half word */
     dma_set_peripheral_size(DMA1, DMA_STREAM0, 16U);
     /* manually disable incrementation of CCR */
@@ -141,15 +121,19 @@ error_t LED_init(void) {
     /* enable interrupt */
     dma_enable_transfer_complete_interrupt(DMA1, DMA_STREAM0);
     nvic_enable_irq(NVIC_DMA1_STREAM0_IRQ);
+}
 
+static void data_timer_setup(void) {
+    /* clock both the timer AND the GPIO port */
+    rcc_periph_clock_enable(RCC_TIM4);
+    rcc_periph_clock_enable(RCC_GPIOB);
 
-    /* gpio setup */
     // PB6 is TIM4_CH1
     gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO6);
+    /* af2 is timer channels */
     gpio_set_af(GPIOB, GPIO_AF2, GPIO6);
 
-    /* timer setup */
-    // disable before configuration
+    /* disable before configuration */
     timer_disable_counter(TIM4);
 
     timer_continuous_mode(TIM4);
@@ -164,6 +148,7 @@ error_t LED_init(void) {
     // with preload enabled, generating an update will force ARR to take the value immediately
     timer_generate_event(TIM4, TIM_EGR_UG);
 
+    /* set to PWM1 mode */
     timer_set_oc1_mode(TIM4, TIM_CCMR1_OC1M_PWM1);
     // PWM duty cycle is determined by the CCR1 register
     // in LOCM3, set_oc_value writes to this register.
@@ -180,19 +165,56 @@ error_t LED_init(void) {
     /* manually set it, as it doesn't work */
     TIM4_CCMR1 = 0x68;
 
-    timer_set_dma_on_update_event(TIM4);    // todo check this works
+    /* send dma request on every update */
+    timer_set_dma_on_update_event(TIM4);
+}
 
-    /* break timer set up */
+static void break_timer_setup(void) {
+    /* clock the timer */
     rcc_periph_clock_enable(RCC_TIM3);
 
+    /* disable first */
     timer_disable_counter(TIM3);
+    /* upcounting, no division */
     timer_set_mode(TIM3, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
     timer_set_prescaler(TIM3, 0U);
+
+    /* value should be configured before this */
     timer_set_period(TIM3, led_break_arr);
+    /* one-shot mode will disable and reset the timer after each update */
     timer_one_shot_mode(TIM3);
 
+    /* enable interrupt to send event to FSM */
     timer_enable_irq(TIM3, TIM_DIER_UIE);
     nvic_enable_irq(NVIC_TIM3_IRQ);
+}
+
+/**
+ * Configure TIM4 as PWM out
+ * 
+ * @details 
+ * WS2812B protocol has specific timings for encoding 0s and 1s
+ * the line is held high for 0.4us for a bit value of 0 (low)
+ * the line is held high for 0.8us for a bit value of 1 (high)
+ * the total period of a bit value is 1.25us, so 0.4/1.25 = 32%; 0.8 / 1.25 = 64%
+ */
+error_t LED_init(void) {
+    /* 84MHz / 800KHz = 105 */
+    led_data_arr = 105;
+
+    // 84MHz / (1 / (50us))
+    // rearranging the same equation as above, using the break duration, converted to frequency
+    led_break_arr = 4200;
+    
+    low_duty = (uint32_t) ((float) led_data_arr * 0.32);
+    high_duty = (uint32_t) ((float) led_data_arr * 0.64);
+
+    for (size_t i = 0; i < NUM_BITS; i++) {
+        pwm_values[i] = *(encoder[i & 1]);
+    }
+    dma_setup();
+    data_timer_setup();
+    break_timer_setup();
 
     return OK;
 }

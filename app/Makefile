@@ -7,10 +7,10 @@ SHARED_SRC_DIR = ../shared/src
 SHARED_INC_DIR = ../shared/inc
 
 CFILES = $(SRC_DIR)/firmware.c
-CFILES += $(SRC_DIR)/led.c
-CFILES += $(SHARED_SRC_DIR)/ringbuffer.c
-CFILES += $(SHARED_SRC_DIR)/fsm.c
-CFILES += $(SHARED_SRC_DIR)/error.c
+# CFILES += $(SRC_DIR)/led.c
+# CFILES += $(SHARED_SRC_DIR)/ringbuffer.c
+# CFILES += $(SHARED_SRC_DIR)/fsm.c
+# CFILES += $(SHARED_SRC_DIR)/error.c
 
 # AFILES += api-asm.S
 
