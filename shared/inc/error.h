@@ -1,6 +1,12 @@
 #ifndef ERROR_H
 #define ERROR_H
 
+#include "libopencm3/stm32/gpio.h"
+#include "libopencm3/cm3/cortex.h"
+#include "libopencm3/stm32/rcc.h"
+
+#include "common-defines.h"
+
 typedef unsigned int error_t;
 
 enum errors {
@@ -10,7 +16,10 @@ enum errors {
     RINGBUF_BUFFER_FULL,
     RINGBUF_BUFFER_EMPTY
 };
+#define ERROR_PORT (GPIOC)
+#define ERROR_PIN (GPIO9)
 
-extern void handle_error(error_t err);
+extern void setup_error(void);
+extern error_t error_handler(error_t err);
 
 #endif // ERROR_H

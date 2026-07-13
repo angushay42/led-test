@@ -20,32 +20,32 @@ build/../shared/src/fsm.o: ../shared/src/fsm.c ../shared/inc/fsm.h \
  /Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/arm-none-eabi/include/sys/_types.h \
  /Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/arm-none-eabi/include/sys/_pthreadtypes.h \
  /Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/arm-none-eabi/include/machine/types.h \
- ../shared/inc/ringbuffer.h ../shared/inc/error.h \
- /Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/arm-none-eabi/include/assert.h \
- /Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/arm-none-eabi/include/_ansi.h \
- inc/led.h lib/libopencm3/include/libopencm3/stm32/dma.h \
+ ../shared/inc/error.h lib/libopencm3/include/libopencm3/stm32/gpio.h \
  lib/libopencm3/include/libopencm3/cm3/common.h \
  lib/libopencm3/include/libopencm3/stm32/memorymap.h \
  lib/libopencm3/include/libopencm3/stm32/f4/memorymap.h \
  lib/libopencm3/include/libopencm3/cm3/memorymap.h \
- lib/libopencm3/include/libopencm3/stm32/f4/dma.h \
- lib/libopencm3/include/libopencm3/stm32/common/dma_common_f24.h \
- lib/libopencm3/include/libopencm3/stm32/timer.h \
- lib/libopencm3/include/libopencm3/stm32/f4/timer.h \
- lib/libopencm3/include/libopencm3/stm32/common/timer_common_f24.h \
- lib/libopencm3/include/libopencm3/stm32/common/timer_common_all.h \
- lib/libopencm3/include/libopencm3/stm32/gpio.h \
  lib/libopencm3/include/libopencm3/stm32/f4/gpio.h \
  lib/libopencm3/include/libopencm3/stm32/common/gpio_common_f24.h \
  lib/libopencm3/include/libopencm3/stm32/common/gpio_common_f234.h \
  lib/libopencm3/include/libopencm3/stm32/common/gpio_common_all.h \
- lib/libopencm3/include/libopencm3/cm3/nvic.h \
- lib/libopencm3/include/libopencm3/dispatch/nvic.h \
- lib/libopencm3/include/libopencm3/stm32/f4/nvic.h \
  lib/libopencm3/include/libopencm3/stm32/rcc.h \
  lib/libopencm3/include/libopencm3/stm32/f4/rcc.h \
  lib/libopencm3/include/libopencm3/stm32/pwr.h \
  lib/libopencm3/include/libopencm3/stm32/f4/pwr.h \
  lib/libopencm3/include/libopencm3/stm32/common/pwr_common_v1.h \
  lib/libopencm3/include/libopencm3/stm32/common/rcc_common_all.h \
+ ../shared/inc/ringbuffer.h \
+ /Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/arm-none-eabi/include/assert.h \
+ /Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/arm-none-eabi/include/_ansi.h \
+ inc/led.h lib/libopencm3/include/libopencm3/stm32/dma.h \
+ lib/libopencm3/include/libopencm3/stm32/f4/dma.h \
+ lib/libopencm3/include/libopencm3/stm32/common/dma_common_f24.h \
+ lib/libopencm3/include/libopencm3/stm32/timer.h \
+ lib/libopencm3/include/libopencm3/stm32/f4/timer.h \
+ lib/libopencm3/include/libopencm3/stm32/common/timer_common_f24.h \
+ lib/libopencm3/include/libopencm3/stm32/common/timer_common_all.h \
+ lib/libopencm3/include/libopencm3/cm3/nvic.h \
+ lib/libopencm3/include/libopencm3/dispatch/nvic.h \
+ lib/libopencm3/include/libopencm3/stm32/f4/nvic.h \
  ../shared/inc/common-defines.h ../shared/inc/error.h

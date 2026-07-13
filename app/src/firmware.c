@@ -13,6 +13,33 @@
 #include "led.h"
 #include "error.h"
 
+#define TEST_PORT (GPIOC)
+#define TEST_PIN1 (GPIO8)
+#define TEST_PIN2 (GPIO7)
+#define TEST_PIN3 (GPIO6)
+#define TEST_PIN4 (GPIO5)
+
+extern void delay_ms(uint32_t ms) {
+    for (size_t i = 0; i < (size_t) ((double) ms * 84000000.0 / 1000 / 7.0); i++ )
+        __asm__("NOP");
+}
+
+static void test_setup();
+
+static void test_setup() {
+    rcc_periph_clock_enable(RCC_GPIOC);
+
+    gpio_mode_setup(
+        GPIOC, 
+        GPIO_MODE_OUTPUT,
+        GPIO_PUPD_PULLDOWN,
+        GPIO8 | GPIO7 | GPIO6 | GPIO5
+    );
+    gpio_clear(
+        GPIOC,
+        GPIO8 | GPIO7 | GPIO6 | GPIO5
+    );
+}
 
 
 int main(void) {
@@ -23,22 +50,15 @@ int main(void) {
     /* initialise clock for whole system */
     rcc_clock_setup_pll(&rcc_hsi_configs[RCC_CLOCK_3V3_84MHZ]);
 
-    if ((err = FSM_init(&fsm, state_init_led)))
-        return err;
-    
-    LED_init();
-    // LED_start();
-    timer_enable_counter(TIM4);
-    dma_enable_stream(DMA1, DMA_STREAM0);
-    /* temp do nothing */
-    while (1) {
-        ;
-    }
+    setup_error();
 
+    if ((err = FSM_init(&fsm, state_init_led)))
+        return error_handler(err);
+    
     while (1) {
         /* get next event */
         if ((err = FSM_get_event(&event)))
-            return err; // todo
+            return error_handler(err);
 
         /* TODO: should this switch statement check previous state? */
         /* change state if needed */
@@ -56,24 +76,26 @@ int main(void) {
                 err = FSM_update_state(&fsm, state_data_start);
                 break;
             default:
-                return LED_INVALID_EVENT; // todo 
+                return error_handler(LED_INVALID_EVENT);
         }
         if (err)
-            return err; // todo
-        
-        
+            return error_handler(err);
+
         /* process current state */
         switch (fsm.curr_state) {
             case state_init_led:
                 if ((err = LED_init()))
-                    return err;
+                    return error_handler(err);
+
                 if ((err = FSM_update_state(&fsm, state_data_start)))
-                    return err;
+                    return error_handler(err);
+
                 break;
             case state_data_start:
                 LED_start();
                 if ((err = FSM_update_state(&fsm, state_data_during)))
-                    return err;
+                    return error_handler(err);
+
                 break;
             case state_data_during:
             /* do nothing */
@@ -81,12 +103,14 @@ int main(void) {
             case state_data_stop:
                 LED_stop();
                 if ((err = FSM_update_state(&fsm, state_break_start)))
-                    return err;
+                    return error_handler(err);
+
                 break;
             case state_break_start:
                 timer_enable_counter(TIM4);
                 if ((err = FSM_update_state(&fsm, state_break_during)))
-                    return err;
+                    return error_handler(err);
+
                 break;
             case state_break_during:
                 /* do nothing */
@@ -95,8 +119,7 @@ int main(void) {
                 /* do nothing, one-pulse mode will automate this*/
                 break;
             default:
-                err = LED_INVALID_STATE; 
-                break;
+                return error_handler(LED_INVALID_STATE); 
         }
         
     }

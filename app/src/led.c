@@ -3,7 +3,7 @@
 #include "assert.h"
 
 volatile uint32_t led_data_arr, led_break_arr, high_duty, low_duty;
-volatile uint32_t *encoder[2] = {&low_duty, &high_duty};
+volatile uint16_t encoder[2];
 
 #define NUM_COLOURS   (3) // bytes
 #define LEDS        (12)
@@ -18,15 +18,15 @@ volatile uint16_t pwm_values[NUM_BITS];
 static void dma_setup(void);
 static void data_timer_setup(void);
 static void break_timer_setup(void);
+static void LED_map_colour(uint8_t colour, volatile uint16_t *dest);
 
 
-/******************* LED Driver *******************/
 /* ------------------ ISRs ------------------ */
-void tim4_isr(void) {
-    timer_clear_flag(TIM4, TIM_SR_UIF);
-    timer_clear_flag(TIM4, TIM_SR_CC1IF);
+// void tim4_isr(void) {
+//     timer_clear_flag(TIM4, TIM_SR_UIF);
+//     timer_clear_flag(TIM4, TIM_SR_CC1IF);
 
-}
+// }
 
 void tim3_isr(void) {
     if (timer_get_flag(TIM3, TIM_SR_UIF)) {
@@ -37,90 +37,70 @@ void tim3_isr(void) {
     }
 }
 
-/* current data being transmitted */
-volatile int data_index = 0;
-void dma1_stream0_isr(void) {
-    if (dma_get_interrupt_flag(DMA1, DMA_STREAM0, DMA_TCIF)) {
-        dma_clear_interrupt_flags(DMA1, DMA_STREAM0, DMA_TCIF);
-        // wait until all data is sent
-        if (data_index >= NUM_BITS) {
-            data_index++;
-            return;
-        }
-        data_index = 0;
+void dma1_stream6_isr(void) {
+    /* transfer is complete once NDTR is 0 (all data sent, circular buffer reloaded) */
+    if (dma_get_interrupt_flag(DMA1, DMA_STREAM6, DMA_TCIF)) {
+        dma_clear_interrupt_flags(DMA1, DMA_STREAM6, DMA_TCIF);
+        
         // stop sending led data
         LED_stop(); 
-        // reset memory address
-        dma_set_memory_address(DMA1, DMA_STREAM0, (uint32_t) pwm_values);
 
         // signal to other components 
         FSM_queue_event(event_data_complete);
     }
 }
 
-static error_t LED_extract_bits(uint8_t colour, uint16_t *dest) {
-    assert(dest != NULL);
-    /* copy pointer */
-    uint16_t *ptr = dest;
-    /* iterate over byte and assign values */
-    for (size_t i = 0; i < 8; i++) {
-        *ptr++ = *(encoder[(colour & 1)]);
-        colour >> 1;
-    }
-    return OK;
-}
-
 /* ------------------ LED API Functions ------------------ */
-error_t LED_set_colour(uint8_t r, uint8_t g, uint8_t b) {
-    
-        
-}
 
 error_t LED_start(void) {
-    dma_enable_stream(DMA1, DMA_STREAM0);
     timer_set_counter(TIM4, 0U);
+    timer_clear_flag(TIM4, TIM_SR_UIF);
     timer_enable_counter(TIM4);
     return OK;
 }
 
 error_t LED_stop(void) {
     timer_disable_counter(TIM4);
-    dma_disable_stream(DMA1, DMA_STREAM0);
     return OK;
 }
-
 
 static void dma_setup(void) {
     /* clock the peripheral */
     rcc_periph_clock_enable(RCC_DMA1);
 
     /* disable before configuration */
-    dma_disable_stream(DMA1, DMA_STREAM0);
+    dma_disable_stream(DMA1, DMA_STREAM6);
+    dma_stream_reset(DMA1, DMA_STREAM6);
 
     /* send RGB values from memory to the CCR1 register as a PWM value */
-    dma_set_transfer_mode(DMA1, DMA_STREAM0, DMA_SxCR_DIR_MEM_TO_PERIPHERAL);
-    dma_set_memory_address(DMA1, DMA_STREAM0, (uint32_t) &pwm_values);
-    dma_set_peripheral_address(DMA1, DMA_STREAM0, TIM4_CCR1);
+    dma_set_transfer_mode(DMA1, DMA_STREAM6, DMA_SxCR_DIR_MEM_TO_PERIPHERAL);
+    dma_set_memory_address(DMA1, DMA_STREAM6, (uint32_t) &pwm_values);
+    dma_set_peripheral_address(DMA1, DMA_STREAM6, (uint32_t) &TIM4_CCR1);
 
-    /* we are only sending one CCR value at a time */
-    dma_set_number_of_data(DMA1, DMA_STREAM0, 1U);
-    /* on STM32F4 the channel is 2 for TIM4_CH1 */
-    dma_channel_select(DMA1, DMA_STREAM0, DMA_SxCR_CHSEL_2);
-    dma_set_priority(DMA1, DMA_STREAM0, DMA_SxCR_PL_VERY_HIGH);
+    /* total data to be sent is NUM_BITS */
+    dma_set_number_of_data(DMA1, DMA_STREAM6, NUM_BITS);
+
+    /* on STM32F4 the channel is 2 for TIM4_UP */
+    dma_channel_select(DMA1, DMA_STREAM6, DMA_SxCR_CHSEL_2);
+    dma_set_priority(DMA1, DMA_STREAM6, DMA_SxCR_PL_VERY_HIGH);
     /* Direct mode does not use the FIFO level, it uses an internal FIFO */
-    dma_enable_direct_mode(DMA1, DMA_STREAM0);
+    dma_enable_direct_mode(DMA1, DMA_STREAM6);
+    /* circular mode will reset memory pointer upon full transfer */
+    dma_enable_circular_mode(DMA1, DMA_STREAM6);
 
-    dma_set_memory_size(DMA1, DMA_STREAM0, 16U); // todo could be reduced to a byte ?
+    dma_set_memory_size(DMA1, DMA_STREAM6, DMA_SxCR_MSIZE_16BIT); // todo could be reduced to a byte ?
     /* CCR is half word */
-    dma_set_peripheral_size(DMA1, DMA_STREAM0, 16U);
+    dma_set_peripheral_size(DMA1, DMA_STREAM6, DMA_SxCR_PSIZE_16BIT);
     /* manually disable incrementation of CCR */
-    dma_disable_peripheral_increment_mode(DMA1, DMA_STREAM0);
+    dma_disable_peripheral_increment_mode(DMA1, DMA_STREAM6);
     /* enable incrementation of the storage values */
-    dma_enable_memory_increment_mode(DMA1, DMA_STREAM0);
+    dma_enable_memory_increment_mode(DMA1, DMA_STREAM6);
     
     /* enable interrupt */
-    dma_enable_transfer_complete_interrupt(DMA1, DMA_STREAM0);
-    nvic_enable_irq(NVIC_DMA1_STREAM0_IRQ);
+    dma_enable_transfer_complete_interrupt(DMA1, DMA_STREAM6);
+    nvic_enable_irq(NVIC_DMA1_STREAM6_IRQ);
+
+    dma_enable_stream(DMA1, DMA_STREAM6);
 }
 
 static void data_timer_setup(void) {
@@ -137,7 +117,7 @@ static void data_timer_setup(void) {
     timer_disable_counter(TIM4);
 
     timer_continuous_mode(TIM4);
-    timer_enable_preload(TIM4);
+
     // upcounting, no clock division, edge alignment
     timer_set_mode(TIM4, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
 
@@ -145,8 +125,6 @@ static void data_timer_setup(void) {
     timer_set_prescaler(TIM4, 0);   
     // PWM frequency is determined by the ARR register, which set_period writes to
     timer_set_period(TIM4, led_data_arr);
-    // with preload enabled, generating an update will force ARR to take the value immediately
-    timer_generate_event(TIM4, TIM_EGR_UG);
 
     /* set to PWM1 mode */
     timer_set_oc1_mode(TIM4, TIM_CCMR1_OC1M_PWM1);
@@ -155,8 +133,11 @@ static void data_timer_setup(void) {
     timer_set_oc_value(TIM4, TIM_OC1, low_duty); 
 
     /* interrupt config */
-    timer_enable_irq(TIM4, TIM_DIER_CC1IE);
-    // timer_disable_irq(TIM4, TIM_DIER_CC1IE);
+    /* IMPORTANT: enable the DMA with THIS flag */
+    timer_enable_irq(TIM4, TIM_DIER_UDE);
+
+    /* todo don't need interrupts so far. */
+    timer_disable_irq(TIM4, TIM_DIER_CC1IE);
     timer_disable_irq(TIM4, TIM_DIER_UIE);
     nvic_enable_irq(NVIC_TIM4_IRQ);
     
@@ -189,6 +170,30 @@ static void break_timer_setup(void) {
     nvic_enable_irq(NVIC_TIM3_IRQ);
 }
 
+static void LED_map_colour(uint8_t colour, volatile uint16_t *dest) {
+    assert(dest != NULL);
+
+    // copy pointer
+    volatile uint16_t *ptr = dest;
+    for (size_t i= 0; i < 8; i ++) {
+        /* fill dest in reverse order */
+        /* if LSB is set, the index to encoder will be 1 */
+        *(ptr + 8 - 1 - i) = encoder[colour & 1];
+        ptr++;
+        colour >>= 1;
+    }
+}
+
+void LED_map_colours(uint8_t r, uint8_t g, uint8_t b) {
+    /* copy pointer */
+    volatile uint16_t *ptr = pwm_values;
+
+    /* fill bits in GRB order (as per WS2812B) */    
+    LED_map_colour(g, ptr);
+    LED_map_colour(r, (ptr+8));
+    LED_map_colour(b, ptr+16);
+}
+
 /**
  * Configure TIM4 as PWM out
  * 
@@ -209,9 +214,15 @@ error_t LED_init(void) {
     low_duty = (uint32_t) ((float) led_data_arr * 0.32);
     high_duty = (uint32_t) ((float) led_data_arr * 0.64);
 
+    /* initialise encoder */
+    encoder[0] = (uint16_t) low_duty;
+    encoder[1] = (uint16_t) high_duty;
+
+    /* fill initial values for the LED colours */
     for (size_t i = 0; i < NUM_BITS; i++) {
-        pwm_values[i] = *(encoder[i & 1]);
+        pwm_values[i] = encoder[i & 1];
     }
+
     dma_setup();
     data_timer_setup();
     break_timer_setup();
@@ -220,7 +231,7 @@ error_t LED_init(void) {
 }
 
 error_t LED_teardown(void) {
-    dma_stream_reset(DMA1, DMA_STREAM0);
+    dma_stream_reset(DMA1, DMA_STREAM6);
 
     rcc_periph_clock_disable(RCC_GPIOB);
     rcc_periph_clock_disable(RCC_TIM4);
