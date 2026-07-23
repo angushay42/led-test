@@ -13,20 +13,15 @@
 #include "led.h"
 #include "error.h"
 
-#define TEST_PORT (GPIOC)
-#define TEST_PIN1 (GPIO8)
-#define TEST_PIN2 (GPIO7)
-#define TEST_PIN3 (GPIO6)
-#define TEST_PIN4 (GPIO5)
 
 extern void delay_ms(uint32_t ms) {
     for (size_t i = 0; i < (size_t) ((double) ms * 84000000.0 / 1000 / 7.0); i++ )
         __asm__("NOP");
 }
 
-static void test_setup();
+static void test_setup(void);
 
-static void test_setup() {
+static void test_setup(void) {
     rcc_periph_clock_enable(RCC_GPIOC);
 
     gpio_mode_setup(
@@ -50,6 +45,7 @@ int main(void) {
     /* initialise clock for whole system */
     rcc_clock_setup_pll(&rcc_hsi_configs[RCC_CLOCK_3V3_84MHZ]);
 
+    test_setup();
     setup_error();
 
     if ((err = FSM_init(&fsm, state_init_led)))
@@ -60,7 +56,6 @@ int main(void) {
         if ((err = FSM_get_event(&event)))
             return error_handler(err);
 
-        /* TODO: should this switch statement check previous state? */
         /* change state if needed */
         switch (event) {
             case event_none:
@@ -70,6 +65,7 @@ int main(void) {
                 err = FSM_update_state(&fsm, state_data_start);
                 break;
             case event_data_complete:
+
                 err = FSM_update_state(&fsm, state_break_start);
                 break;
             case event_break_complete:
@@ -86,7 +82,7 @@ int main(void) {
             case state_init_led:
                 if ((err = LED_init()))
                     return error_handler(err);
-
+                // todo why do this when i have created event_init complete? do one or the other.
                 if ((err = FSM_update_state(&fsm, state_data_start)))
                     return error_handler(err);
 
@@ -107,10 +103,9 @@ int main(void) {
 
                 break;
             case state_break_start:
-                timer_enable_counter(TIM4);
+                timer_enable_counter(TIM3);
                 if ((err = FSM_update_state(&fsm, state_break_during)))
                     return error_handler(err);
-
                 break;
             case state_break_during:
                 /* do nothing */

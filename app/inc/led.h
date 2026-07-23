@@ -11,7 +11,14 @@
 #include "common-defines.h"
 #include "error.h"
 
-void LED_map_colours(uint8_t r, uint8_t g, uint8_t b);
+struct pixel {
+    uint8_t g;
+    uint8_t r;
+    uint8_t b;
+};
+
+void LED_set_pixel(struct pixel *pxl, size_t pos);
+
 
 error_t LED_init(void);
 error_t LED_teardown(void);

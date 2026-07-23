@@ -5,9 +5,10 @@
 volatile uint32_t led_data_arr, led_break_arr, high_duty, low_duty;
 volatile uint16_t encoder[2];
 
-#define NUM_COLOURS   (3) // bytes
-#define LEDS        (12)
-#define NUM_BITS    (NUM_COLOURS * LEDS * 8)
+#define NUM_COLOURS     (3) // bytes
+#define NUM_LEDS        (16)
+#define NUM_BITS    (NUM_COLOURS * NUM_LEDS * 8)
+#define LITTLE_ENDIAN   (true)
 
 // each data packet is 24 bits wide
 // 12 leds means we need to store SIZE * LEDS * 8
@@ -18,15 +19,25 @@ volatile uint16_t pwm_values[NUM_BITS];
 static void dma_setup(void);
 static void data_timer_setup(void);
 static void break_timer_setup(void);
-static void LED_map_colour(uint8_t colour, volatile uint16_t *dest);
+static void LED_map_colour(uint8_t colour, volatile uint16_t *dest, bool little);
 
 
 /* ------------------ ISRs ------------------ */
-// void tim4_isr(void) {
-//     timer_clear_flag(TIM4, TIM_SR_UIF);
-//     timer_clear_flag(TIM4, TIM_SR_CC1IF);
+void tim4_isr(void) {
+    if (timer_get_flag(TIM4, TIM_SR_UIF)) {
+        timer_clear_flag(TIM4, TIM_SR_UIF);
+        
+        /* disable this again */
+        timer_disable_irq(TIM4, TIM_DIER_UIE);
 
-// }
+        LED_stop();
+
+        // signal to other components 
+        FSM_queue_event(event_data_complete);
+    }
+    timer_clear_flag(TIM4, TIM_SR_CC1IF);
+
+}
 
 void tim3_isr(void) {
     if (timer_get_flag(TIM3, TIM_SR_UIF)) {
@@ -37,30 +48,35 @@ void tim3_isr(void) {
     }
 }
 
+// todo this shouldn't stop the timer, the timer should update one last time
 void dma1_stream6_isr(void) {
     /* transfer is complete once NDTR is 0 (all data sent, circular buffer reloaded) */
     if (dma_get_interrupt_flag(DMA1, DMA_STREAM6, DMA_TCIF)) {
         dma_clear_interrupt_flags(DMA1, DMA_STREAM6, DMA_TCIF);
-        
-        // stop sending led data
-        LED_stop(); 
-
-        // signal to other components 
-        FSM_queue_event(event_data_complete);
+        timer_enable_irq(TIM4, TIM_DIER_UIE);
     }
 }
+
 
 /* ------------------ LED API Functions ------------------ */
 
 error_t LED_start(void) {
     timer_set_counter(TIM4, 0U);
     timer_clear_flag(TIM4, TIM_SR_UIF);
+    // dma_set_memory_address(DMA1, DMA_STREAM6, (uint32_t) &pwm_values);
+    // dma_set_number_of_data(DMA1, DMA_STREAM6, NUM_BITS);
+    // timer_set_oc_value(DMA1, DMA_STREAM6, pwm_values[0]);
     timer_enable_counter(TIM4);
+    timer_set_oc1_mode(TIM4, TIM_OCM_PWM1);
     return OK;
 }
 
 error_t LED_stop(void) {
     timer_disable_counter(TIM4);
+    /* manually reset stream */
+    
+    timer_set_oc1_mode(TIM4, TIM_OCM_FORCE_LOW);
+    
     return OK;
 }
 
@@ -110,6 +126,8 @@ static void data_timer_setup(void) {
 
     // PB6 is TIM4_CH1
     gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO6);
+    // gpio_set_output_options(GPIOB, GPIO_OTYPE_OD, GPIO_OSPEED_100MHZ, GPIO6);
+    
     /* af2 is timer channels */
     gpio_set_af(GPIOB, GPIO_AF2, GPIO6);
 
@@ -126,8 +144,9 @@ static void data_timer_setup(void) {
     // PWM frequency is determined by the ARR register, which set_period writes to
     timer_set_period(TIM4, led_data_arr);
 
-    /* set to PWM1 mode */
-    timer_set_oc1_mode(TIM4, TIM_CCMR1_OC1M_PWM1);
+    /* force low initially, to prevent unwanted */
+    timer_set_oc1_mode(TIM4, TIM_OCM_FORCE_LOW);
+
     // PWM duty cycle is determined by the CCR1 register
     // in LOCM3, set_oc_value writes to this register.
     timer_set_oc_value(TIM4, TIM_OC1, low_duty); 
@@ -142,7 +161,7 @@ static void data_timer_setup(void) {
     nvic_enable_irq(NVIC_TIM4_IRQ);
     
     timer_enable_oc_output(TIM4, TIM_OC1);
-    timer_enable_oc_preload(TIM4, TIM_OC1);
+    timer_disable_oc_preload(TIM4, TIM_OC1);
     /* manually set it, as it doesn't work */
     TIM4_CCMR1 = 0x68;
 
@@ -170,28 +189,36 @@ static void break_timer_setup(void) {
     nvic_enable_irq(NVIC_TIM3_IRQ);
 }
 
-static void LED_map_colour(uint8_t colour, volatile uint16_t *dest) {
+static void LED_map_colour(uint8_t colour, volatile uint16_t *dest, bool little) {
     assert(dest != NULL);
 
     // copy pointer
     volatile uint16_t *ptr = dest;
-    for (size_t i= 0; i < 8; i ++) {
+    for (volatile size_t i= 0; i < 8; i++) {
         /* fill dest in reverse order */
-        /* if LSB is set, the index to encoder will be 1 */
-        *(ptr + 8 - 1 - i) = encoder[colour & 1];
-        ptr++;
+        /* if the LSB is set, the index to encoder will be 1 */
+        if (!little)
+            *(ptr + i) = encoder[colour & 1];
+        else
+            *(ptr + 8 - 1 - i) = encoder[colour & 1];
         colour >>= 1;
     }
 }
 
-void LED_map_colours(uint8_t r, uint8_t g, uint8_t b) {
+/**
+ * @param pos the 1-indexed position of an LED
+ */
+void LED_set_pixel(struct pixel *pxl, size_t pos) {
+    assert(pxl != NULL); 
+    assert(pos > 0 && pos <= NUM_LEDS);
+
     /* copy pointer */
-    volatile uint16_t *ptr = pwm_values;
+    volatile uint16_t *ptr = pwm_values + (uint16_t) ((pos - 1) * NUM_COLOURS * 8);
 
     /* fill bits in GRB order (as per WS2812B) */    
-    LED_map_colour(g, ptr);
-    LED_map_colour(r, (ptr+8));
-    LED_map_colour(b, ptr+16);
+    LED_map_colour(pxl->g, ptr, LITTLE_ENDIAN);
+    LED_map_colour(pxl->r, (ptr+8), LITTLE_ENDIAN);
+    LED_map_colour(pxl->b, ptr+16, LITTLE_ENDIAN);
 }
 
 /**
@@ -209,7 +236,7 @@ error_t LED_init(void) {
 
     // 84MHz / (1 / (50us))
     // rearranging the same equation as above, using the break duration, converted to frequency
-    led_break_arr = 4200;
+    led_break_arr = 25200;
     
     low_duty = (uint32_t) ((float) led_data_arr * 0.32);
     high_duty = (uint32_t) ((float) led_data_arr * 0.64);
@@ -218,10 +245,29 @@ error_t LED_init(void) {
     encoder[0] = (uint16_t) low_duty;
     encoder[1] = (uint16_t) high_duty;
 
+    struct pixel pxl = {
+        .g = 0,
+        .r = 0,
+        .b = 10
+    };
+
+    for (size_t i = 0; i < NUM_BITS; i++)
+        pwm_values[i] = 0;
+
     /* fill initial values for the LED colours */
-    for (size_t i = 0; i < NUM_BITS; i++) {
-        pwm_values[i] = encoder[i & 1];
+    for (size_t i = 0; i < NUM_LEDS; i++) {
+        // if (i > 7) {
+        //     pxl.r <<= 1;
+        //     pxl.r |= 1;
+        // }
+        // pxl.g <<= 1;
+        // pxl.g |= 1;
+        
+        LED_set_pixel(&pxl, i+1);
     }
+    // for (size_t i = 0; i < NUM_BITS; i++) {
+        
+    // }
 
     dma_setup();
     data_timer_setup();
